@@ -1,11 +1,5 @@
 import { useState } from 'react';
-import OpenAI from 'openai';
-
-const openai = new OpenAI({
-  apiKey: import.meta.env.VITE_OPENAI_API_KEY || 'demo-key',
-  baseURL: "https://openrouter.ai/api/v1",
-  dangerouslyAllowBrowser: true,
-});
+import { apiService } from '../services/api';
 
 export function useOpenAI() {
   const [isLoading, setIsLoading] = useState(false);
@@ -13,52 +7,8 @@ export function useOpenAI() {
   const transcribeAndParse = async (audioBlob) => {
     setIsLoading(true);
     try {
-      // For demo purposes, we'll simulate the transcription and parsing
-      // In a real app, you would send the audio to OpenAI's transcription API
-      
-      // Simulate transcription delay
-      await new Promise(resolve => setTimeout(resolve, 1500));
-      
-      // Mock responses based on common voice inputs
-      const mockResponses = [
-        {
-          type: 'task',
-          data: {
-            description: 'Call mom about dinner plans',
-            due_date: new Date(Date.now() + 86400000).toISOString(),
-            priority: 'high'
-          }
-        },
-        {
-          type: 'task',
-          data: {
-            description: 'Buy groceries for the week',
-            due_date: new Date(Date.now() + 172800000).toISOString(),
-            priority: 'medium'
-          }
-        },
-        {
-          type: 'event',
-          data: {
-            title: 'Doctor appointment',
-            start_time: new Date(Date.now() + 259200000).toISOString(),
-            end_time: new Date(Date.now() + 262800000).toISOString(),
-            location: 'Medical Center'
-          }
-        },
-        {
-          type: 'task',
-          data: {
-            description: 'Finish project presentation',
-            due_date: new Date(Date.now() + 432000000).toISOString(),
-            priority: 'high'
-          }
-        }
-      ];
-
-      // Return a random mock response
-      return mockResponses[Math.floor(Math.random() * mockResponses.length)];
-
+      const result = await apiService.transcribeAndParse(audioBlob);
+      return result;
     } catch (error) {
       console.error('OpenAI API error:', error);
       throw new Error('Failed to process audio');
@@ -68,23 +18,46 @@ export function useOpenAI() {
   };
 
   const generateTaskSuggestions = async (tasks) => {
-    // Mock AI prioritization
-    return tasks.sort((a, b) => {
-      const priorityOrder = { high: 3, medium: 2, low: 1 };
-      const dueDateA = a.due_date ? new Date(a.due_date) : new Date('2099-12-31');
-      const dueDateB = b.due_date ? new Date(b.due_date) : new Date('2099-12-31');
-      
-      // Sort by priority first, then by due date
-      if (priorityOrder[a.priority] !== priorityOrder[b.priority]) {
-        return priorityOrder[b.priority] - priorityOrder[a.priority];
-      }
-      return dueDateA - dueDateB;
-    });
+    setIsLoading(true);
+    try {
+      const result = await apiService.prioritizeTasks(tasks);
+      return result;
+    } catch (error) {
+      console.error('Task prioritization error:', error);
+      // Fallback to simple sorting
+      return tasks.sort((a, b) => {
+        const priorityOrder = { high: 3, medium: 2, low: 1 };
+        const dueDateA = a.due_date ? new Date(a.due_date) : new Date('2099-12-31');
+        const dueDateB = b.due_date ? new Date(b.due_date) : new Date('2099-12-31');
+        
+        // Sort by priority first, then by due date
+        if (priorityOrder[a.priority] !== priorityOrder[b.priority]) {
+          return priorityOrder[b.priority] - priorityOrder[a.priority];
+        }
+        return dueDateA - dueDateB;
+      });
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const generateReminderSuggestions = async (item, userPreferences = {}) => {
+    setIsLoading(true);
+    try {
+      const result = await apiService.generateReminderSuggestions(item, userPreferences);
+      return result;
+    } catch (error) {
+      console.error('Reminder suggestions error:', error);
+      throw error;
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return {
     transcribeAndParse,
     generateTaskSuggestions,
+    generateReminderSuggestions,
     isLoading
   };
 }

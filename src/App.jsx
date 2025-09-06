@@ -6,12 +6,36 @@ import { CalendarView } from './components/CalendarView';
 import { PremiumFeatures } from './components/PremiumFeatures';
 import { useLocalStorage } from './hooks/useLocalStorage';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from './components/ui/Tabs';
+import { databaseService } from './services/supabase';
+import { paymentService } from './services/payment';
 
 function App() {
   const [tasks, setTasks] = useLocalStorage('speaktaskr-tasks', []);
   const [events, setEvents] = useLocalStorage('speaktaskr-events', []);
   const [activeTab, setActiveTab] = useState('tasks');
   const [isPremium, setIsPremium] = useState(false);
+  const [userWallet, setUserWallet] = useState(null);
+  const [userStatus, setUserStatus] = useState(null);
+  const [isLoading, setIsLoading] = useState(false);
+
+  // Initialize user status and check for premium features
+  useEffect(() => {
+    // Mock wallet for demo - in real app this would come from wallet connection
+    const mockWallet = '0x1234567890abcdef1234567890abcdef12345678';
+    setUserWallet(mockWallet);
+    
+    // Check user's premium status
+    const status = paymentService.getUserStatus(mockWallet);
+    setUserStatus(status);
+    setIsPremium(status.hasSubscription || Object.values(status.features).some(count => count > 0));
+  }, []);
+
+  // Migrate local data to database if Supabase is configured
+  useEffect(() => {
+    if (userWallet && databaseService.isConfigured()) {
+      databaseService.migration.migrateLocalData(userWallet);
+    }
+  }, [userWallet]);
 
   const addTask = (task) => {
     const newTask = {
@@ -33,10 +57,14 @@ function App() {
     setEvents(prev => [newEvent, ...prev]);
   };
 
-  const updateTaskStatus = (taskId, status) => {
+  const updateTask = (taskId, updates) => {
     setTasks(prev => prev.map(task => 
-      task.id === taskId ? { ...task, status } : task
+      task.id === taskId ? { ...task, ...updates } : task
     ));
+  };
+
+  const updateTaskStatus = (taskId, status) => {
+    updateTask(taskId, { status });
   };
 
   const deleteTask = (taskId) => {
@@ -45,6 +73,32 @@ function App() {
 
   const deleteEvent = (eventId) => {
     setEvents(prev => prev.filter(event => event.id !== eventId));
+  };
+
+  const handlePremiumUpgrade = async (feature) => {
+    if (!userWallet) {
+      alert('Please connect your wallet first');
+      return;
+    }
+
+    setIsLoading(true);
+    try {
+      const result = await paymentService.purchaseFeature(feature, userWallet);
+      
+      if (result.success) {
+        // Update user status
+        const newStatus = paymentService.getUserStatus(userWallet);
+        setUserStatus(newStatus);
+        setIsPremium(newStatus.hasSubscription || Object.values(newStatus.features).some(count => count > 0));
+        
+        alert(`Successfully purchased ${feature}! You now have ${result.creditsAdded} credits.`);
+      }
+    } catch (error) {
+      console.error('Purchase failed:', error);
+      alert('Purchase failed. Please try again.');
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (
@@ -87,8 +141,10 @@ function App() {
               <TaskList 
                 tasks={tasks}
                 onStatusChange={updateTaskStatus}
+                onUpdate={updateTask}
                 onDelete={deleteTask}
                 isPremium={isPremium}
+                userWallet={userWallet}
               />
             </TabsContent>
             
@@ -102,7 +158,9 @@ function App() {
             <TabsContent value="premium" className="mt-6">
               <PremiumFeatures 
                 isPremium={isPremium}
-                onUpgrade={() => setIsPremium(true)}
+                userStatus={userStatus}
+                onUpgrade={handlePremiumUpgrade}
+                isLoading={isLoading}
               />
             </TabsContent>
           </Tabs>
